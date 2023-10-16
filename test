@@ -1,0 +1,204 @@
+#include "C:\\Users\\Leaper\\Desktop\\10.13德龙切痕sdk旧\\德龙切痕\\德龙切痕\\LPVCore.h"
+#include "C:\\Users\\Leaper\\Desktop\\10.13德龙切痕sdk旧\\德龙切痕\\德龙切痕\\LPVGeom.h"
+#include "C:\\Users\\Leaper\\Desktop\\10.13德龙切痕sdk旧\\德龙切痕\\德龙切痕\\LPVImgProc.h"
+#include "C:\\Users\\Leaper\\Desktop\\10.13德龙切痕sdk旧\\德龙切痕\\德龙切痕\\LPWKerf.h"
+#include "C:\\Users\\Leaper\\Desktop\\10.13德龙切痕sdk旧\\德龙切痕\\德龙切痕\\LPVDisplay.h"
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+bool compare(int a, int b)
+{
+	return a > b;  // 降序排序
+}
+
+int main(int argc, char* argv[])
+{
+	std::vector<double> m_leftHight;
+	std::vector<double> m_rightHight;
+
+	int edge_val = 10;
+	int mark_val = 35;
+
+	// 初始化 COM
+	CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+	// 初始化显示控件
+	ILDisplayPtr m_display(__uuidof(LDisplay));
+
+	// 双阈值初始化
+	ILImageThresholdPtr m_threshold_op(__uuidof(LImageThreshold));
+
+	// 初始化图像对象
+	ILImagePtr m_img(__uuidof(LImage));
+	ILImagePtr close_img(__uuidof(LImage));
+	m_img->Load(L"C:\\Users\\Leaper\\Desktop\\德龙图库 新\\单细线\\41.bmp");
+	int m_img_w = m_img->Width;
+	int m_img_h = m_img->Height;
+
+	ILRotRectRegionPtr  m_roi(__uuidof(LRotRectRegion));
+	m_roi->SetPlacement((m_img->Width) / 2, (m_img->Height) / 2, 500, 100, -90);
+	m_display->AddRegion(m_roi, true); 
+	m_display->SetImage(m_img);
+	m_display->ShowDialog(L"image01", 0, 0,GetSystemMetrics(SM_CXFULLSCREEN), GetSystemMetrics(SM_CXFULLSCREEN));
+
+	// 一，Kerf
+	ILKerfDetectorPtr m_kerftool(__uuidof(LKerfDetector));
+	m_kerftool->KerfWidth = 110;
+	ILKerfResultPtr result;
+	LPVErrorCode err = m_kerftool->Detect1(m_img, m_roi, &result);
+	if (err != LPVNoError)
+	{
+		cout << "Kerf detector failed!" << endl;
+		return -1;
+	}
+	ILLinePtr Kerf_midLine =  result->GetLineMid();
+	double dist = result->LineUp->Distance(result->LineDown);
+	cout << "Distance: " << dist << endl;
+
+	// 闭操作
+	ILImageMorphPtr m_morph_op(__uuidof(LImageMorph));
+	m_morph_op->SetMorphShape(LPVMorphShape::LPVMorphRect, 1, 3);
+	m_morph_op->Close(m_img, close_img);
+
+	ILLinePtr line_left(__uuidof(LLine));
+	ILLinePtr line_right(__uuidof(LLine));
+	line_left = result->LineDown;
+	line_right = result->LineUp;
+
+	m_display->AddObject(Kerf_midLine, 0);
+	m_display->AddObject(line_left, 0);
+	m_display->AddObject(line_right, 0);
+	m_display->ShowDialog(L"image02", 0, 0,GetSystemMetrics(SM_CXFULLSCREEN), GetSystemMetrics(SM_CXFULLSCREEN));
+
+
+
+	int Kerf_mid_X = Kerf_midLine->GetMidPoint()->X;
+	int offset_val = (m_img->Width) / 2 - Kerf_mid_X;
+	if (offset_val > 0)
+	{
+		cout << "切割道中心左偏移：" << abs(offset_val) << "个像素\n" << endl;
+	}
+	else
+	{
+		cout << "切割道中心右偏移：" << abs(offset_val) << "个像素\n" << endl;
+	}
+
+	ILPointPtr point_kerf = Kerf_midLine->GetMidPoint();
+	ILPointPtr point_img(__uuidof(LPoint));
+	point_img->Set((m_img->Width) / 2, (m_img->Height) / 2);
+	((ILDrawablePtr)point_kerf)->raw_SetPenColor(LPVColor::LPVRed);
+	((ILDrawablePtr)point_img)->raw_SetPenColor(LPVColor::LPVBlue);
+	m_display->RemoveAllObjects();
+	m_display->RemoveAllRegions();
+	m_display->AddObject(point_kerf, 0);
+	m_display->AddObject(point_img, 0);
+	m_display->ShowDialog(L"image03", 0, 0, GetSystemMetrics(SM_CXFULLSCREEN), GetSystemMetrics(SM_CXFULLSCREEN));
+
+	double line_left_X1 = line_left->X1;
+	double line_left_Y1 = line_left->Y1;
+	double line_left_X2 = line_left->X2;
+	double line_left_Y2 = line_left->Y2;
+	double line_right_X1 = line_right->X1;
+	double line_right_Y1 = line_right->Y1;
+	double line_right_X2 = line_right->X2;
+	double line_right_Y2 = line_right->Y2;
+	double line_left_cenx = line_left->GetMidPoint()->X;
+	double line_left_ceny = line_left->GetMidPoint()->Y;
+	double line_right_cenx = line_right->GetMidPoint()->X;
+	double line_right_ceny = line_right->GetMidPoint()->Y;
+
+	if ((line_left_Y1 < 0) || (line_right_Y1 < 0))
+	{
+		line_left_Y1 = 0;
+		line_right_Y1 = 0;
+	}
+	if ((line_left_Y2 < 0) || (line_right_Y2 < 0))
+	{
+		line_left_Y2 = m_img_h;
+		line_right_Y2 = m_img_h;
+	}
+	int rect_roi_h = (int)(((line_right_X1 - line_left_X1) + (line_right_X2 - line_left_X2)) / 2);
+	int rect_roi_w = (int)(((line_left_Y2 - line_left_Y1) + (line_right_Y2 - line_right_Y1)) / 2);
+	double rect_roi_a = (line_left->GetAngle() + line_right->GetAngle()) / 2;
+	ILRotRectRegionPtr rect_roi(__uuidof(LRotRectRegion));
+	rect_roi->SetPlacement(((line_left_cenx + line_right_cenx) / 2), ((line_left_ceny + line_right_ceny) / 2), rect_roi_w - 15, rect_roi_h - 5, rect_roi_a);
+	((ILDrawablePtr)rect_roi)->SetPenColor(255);
+	m_display->AddObject(rect_roi, 0);
+	m_display->ShowDialog("image04", 0, 0, GetSystemMetrics(SM_CXFULLSCREEN), GetSystemMetrics(SM_CXFULLSCREEN));
+
+	ILImageStatsPtr m_img_stats(__uuidof(LImageStats));
+	double meanValue, stdDevValue;
+	m_img_stats->MeanStdDev(close_img, (ILRegionPtr)rect_roi, &meanValue, &stdDevValue);
+	int val = (int)meanValue;
+
+	int left_X1 = (int)line_left_X1;
+	int left_Y1 = (int)line_left_Y1;
+	int left_X2 = (int)line_left_X2;
+	int left_Y2 = (int)line_left_Y2;
+	ILPointsPtr PointsLeft(__uuidof(LPoints));
+	for (; (left_Y1 < left_Y2) && (left_Y1 < m_img_h); left_Y1++)
+	{
+		double intersectPntX = line_left->GetX(left_Y1);
+		int tmpLeftX = (int)intersectPntX;
+		for (; tmpLeftX > 0; tmpLeftX--)
+		{
+			if (close_img->GetPixel(tmpLeftX, left_Y1) > (val + edge_val)) 
+			{
+				break;
+			}
+		}
+		PointsLeft->Add(tmpLeftX, left_Y1); 
+
+		double break_hight = 0;
+		break_hight = std::abs(tmpLeftX - left_X1);
+		m_leftHight.push_back(break_hight);
+	}
+	std::sort(m_leftHight.begin(), m_leftHight.end(), compare);   
+	int max_LeftHight = m_leftHight.front();
+	cout << "左崩边最大高度(最远距离)：" << max_LeftHight << " 个像素\n" << endl;
+
+	int right_X1 = (int)line_right_X1;
+	int right_Y1 = (int)line_right_Y1;
+	int right_X2 = (int)line_right_X2;
+	int right_Y2 = (int)line_right_Y2;
+	ILPointsPtr PointsRight(__uuidof(LPoints));
+	for (; (right_Y1 < right_Y2) && (right_Y1 < m_img_h); right_Y1++)
+	{
+		double intersectPntX = line_right->GetX(right_Y1);
+		int tmpRightX = (int)intersectPntX;
+		for (; tmpRightX < m_img_w; tmpRightX++)
+		{
+			if (close_img->GetPixel(tmpRightX, right_Y1) > (val + edge_val)) 
+			{
+				break;
+			}
+		}
+		PointsRight->Add(tmpRightX, right_Y1); 
+
+		double break_hight = 0;
+		break_hight = std::abs(tmpRightX - right_X1);
+		m_rightHight.push_back(break_hight);
+	}
+	std::sort(m_rightHight.begin(), m_rightHight.end(), compare);   
+	int Max_Righthight = m_rightHight.front();
+	cout << "右崩边最大高度(最远距离)：" << Max_Righthight << " 个像素\n" << endl;
+
+
+	m_display->RemoveAllObjects();
+	m_display->RemoveAllRegions();
+
+	((ILDrawablePtr)PointsLeft)->SetPenColor((LPVColor::LPVYellow));
+	((ILDrawablePtr)PointsRight)->SetPenColor(LPVColor::LPVYellow);
+	m_display->AddObject(PointsLeft, 0);
+	m_display->AddObject(PointsRight, 0);
+	m_display->ShowDialog("m_img05", 0, 0, GetSystemMetrics(SM_CXFULLSCREEN), GetSystemMetrics(SM_CXFULLSCREEN));
+
+	system("pause");
+	return 0;
+
+	CoUninitialize();
+}
